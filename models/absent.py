@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, JSON, DateTime
+from sqlalchemy import Column, Integer, String, Text, JSON, DateTime, Float
 from datetime import datetime
 from models.base import Base
 
@@ -11,7 +11,7 @@ class Person(Base):
     name = Column(String(50), nullable=False, comment="姓名")
     post = Column(String(50), nullable=False, comment="岗位")
     duty_period = Column(String(50), nullable=False, comment="站岗时间段")
-    max_absent_min = Column(Integer, default=5, comment="允许最长离岗时间")
+    max_absent_min = Column(Float, default=5.0, comment="允许最长离岗时间(分钟，支持小数)")
     face_feature = Column(Text, nullable=True, comment="面部特征值")
     create_time = Column(DateTime, default=datetime.now, comment="创建时间")
 
