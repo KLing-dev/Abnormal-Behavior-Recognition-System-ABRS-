@@ -119,6 +119,33 @@ def check_rabbitmq():
         return False
 
 
+def check_redis():
+    print("\n" + "=" * 50)
+    print("检查 Redis 连接")
+    print("=" * 50)
+
+    try:
+        import redis
+        from config.redis_config import redis_settings
+
+        print(f"Redis 地址: {redis_settings.host}:{redis_settings.port}")
+
+        client = redis.Redis(
+            host=redis_settings.host,
+            port=redis_settings.port,
+            password=redis_settings.password,
+            db=redis_settings.db,
+            decode_responses=redis_settings.decode_responses,
+            socket_connect_timeout=5
+        )
+        client.ping()
+        print("✓ Redis 连接成功")
+        return True
+    except Exception as e:
+        print(f"✗ Redis 连接失败: {e}")
+        return False
+
+
 def check_model_files():
     print("\n" + "=" * 50)
     print("检查模型文件")
@@ -183,6 +210,7 @@ def main():
         "模型文件": check_model_files(),
         "数据库": check_database(),
         "RabbitMQ": check_rabbitmq(),
+        "Redis": check_redis(),
     }
 
     print("\n" + "=" * 50)

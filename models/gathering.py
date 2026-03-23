@@ -10,8 +10,7 @@ class AreaGathering(Base):
     area_id = Column(String(10), unique=True, nullable=False, comment="区域编号")
     area_name = Column(String(50), nullable=False, comment="区域名称")
     coords = Column(String(200), nullable=False, comment="区域坐标")
-    threshold_count = Column(Integer, default=3, comment="聚集人数阈值")
-    threshold_min = Column(Integer, default=10, comment="聚集时长阈值")
+    level_thresholds = Column(JSON, nullable=False, comment="等级阈值（JSON：light/medium/urgent）")
     is_enable = Column(Integer, default=1, comment="1启用/0禁用")
     create_time = Column(DateTime, default=datetime.now, comment="创建时间")
 
