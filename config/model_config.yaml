@@ -1,0 +1,17 @@
+yolo12_model:
+  model_path: "weights/yolov12n.pt"
+  device: "cpu"
+  conf_threshold: 0.25
+  iou_threshold: 0.45
+
+tracker:
+  model_type: "bytetrack"
+  track_thresh: 0.5
+  track_buffer: 30
+  match_thresh: 0.8
+
+detection:
+  classes:
+    person: 0
+    banner: 1
+  input_size: 640
