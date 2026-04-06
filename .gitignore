@@ -49,6 +49,9 @@ weights/*.pth
 # TEST - 测试目录不上传
 TEST/
 
+# Output - 测试输出目录不上传
+output/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -56,3 +59,6 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Trae
+.trae/
