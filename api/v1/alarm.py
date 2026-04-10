@@ -1,19 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional, List
+from datetime import datetime
 from sqlalchemy.orm import Session
 from models.base import get_db
 from models.banner import AlarmBanner
-from models.absent import AlarmAbsent
-from models.loitering import AlarmLoitering
 from models.gathering import AlarmGathering
+from models.loitering import AlarmLoitering
+from models.absent import AlarmAbsent
 
 
 router = APIRouter(prefix="/alarm", tags=["alarm"])
 
 
-class AlarmMarkRequest(BaseModel):
-    alarm_ids: List[str]
+class AlarmUpdateStatus(BaseModel):
+    status: int
 
 
 @router.get("/list")
@@ -24,128 +25,156 @@ async def get_alarms(
     status: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
-    return {"message": "alarm list", "alarms": []}
+    alarms = []
+
+    query_params = {}
+    if event_id:
+        query_params["event_id"] = event_id
+    if status is not None:
+        query_params["status"] = status
+
+    banner_alarms = db.query(AlarmBanner).filter_by(**query_params).all()
+    for alarm in banner_alarms:
+        alarms.append({
+            "id": alarm.id,
+            "alarm_time": alarm.alarm_time.strftime("%Y-%m-%d %H:%M:%S") if alarm.alarm_time else None,
+            "event_id": alarm.event_id,
+            "alarm_type": alarm.alarm_type,
+            "content": alarm.content,
+            "source_type": alarm.source_type,
+            "source_id": alarm.source_id,
+            "message_id": alarm.message_id,
+            "status": alarm.status,
+            "module": "banner"
+        })
+
+    gathering_alarms = db.query(AlarmGathering).filter_by(**query_params).all()
+    for alarm in gathering_alarms:
+        alarms.append({
+            "id": alarm.id,
+            "alarm_time": alarm.alarm_time.strftime("%Y-%m-%d %H:%M:%S") if alarm.alarm_time else None,
+            "event_id": alarm.event_id,
+            "alarm_type": alarm.alarm_type,
+            "content": alarm.content,
+            "source_type": alarm.source_type,
+            "source_id": alarm.source_id,
+            "message_id": alarm.message_id,
+            "status": alarm.status,
+            "module": "gathering"
+        })
+
+    loitering_alarms = db.query(AlarmLoitering).filter_by(**query_params).all()
+    for alarm in loitering_alarms:
+        alarms.append({
+            "id": alarm.id,
+            "alarm_time": alarm.alarm_time.strftime("%Y-%m-%d %H:%M:%S") if alarm.alarm_time else None,
+            "event_id": alarm.event_id,
+            "alarm_type": alarm.alarm_type,
+            "content": alarm.content,
+            "source_type": alarm.source_type,
+            "source_id": alarm.source_id,
+            "message_id": alarm.message_id,
+            "status": alarm.status,
+            "module": "loitering"
+        })
+
+    absent_alarms = db.query(AlarmAbsent).filter_by(**query_params).all()
+    for alarm in absent_alarms:
+        alarms.append({
+            "id": alarm.id,
+            "alarm_time": alarm.alarm_time.strftime("%Y-%m-%d %H:%M:%S") if alarm.alarm_time else None,
+            "event_id": alarm.event_id,
+            "alarm_type": alarm.alarm_type,
+            "content": alarm.content,
+            "source_type": alarm.source_type,
+            "source_id": alarm.source_id,
+            "message_id": alarm.message_id,
+            "status": alarm.status,
+            "module": "absent"
+        })
+
+    if start_time:
+        alarms = [a for a in alarms if a["alarm_time"] and a["alarm_time"] >= start_time]
+    if end_time:
+        alarms = [a for a in alarms if a["alarm_time"] and a["alarm_time"] <= end_time]
+
+    alarms.sort(key=lambda x: x["alarm_time"] or "", reverse=True)
+
+    return {"message": "success", "alarms": alarms}
+
+
+@router.put("/{alarm_id}/status")
+async def update_alarm_status(
+    alarm_id: int,
+    data: AlarmUpdateStatus,
+    db: Session = Depends(get_db)
+):
+    updated = False
+
+    alarm = db.query(AlarmBanner).filter(AlarmBanner.id == alarm_id).first()
+    if alarm:
+        alarm.status = data.status
+        db.commit()
+        updated = True
+
+    if not updated:
+        alarm = db.query(AlarmGathering).filter(AlarmGathering.id == alarm_id).first()
+        if alarm:
+            alarm.status = data.status
+            db.commit()
+            updated = True
+
+    if not updated:
+        alarm = db.query(AlarmLoitering).filter(AlarmLoitering.id == alarm_id).first()
+        if alarm:
+            alarm.status = data.status
+            db.commit()
+            updated = True
+
+    if not updated:
+        alarm = db.query(AlarmAbsent).filter(AlarmAbsent.id == alarm_id).first()
+        if alarm:
+            alarm.status = data.status
+            db.commit()
+            updated = True
+
+    if updated:
+        return {"message": "success"}
+    return {"message": "alarm not found"}
 
 
 @router.get("/statistics")
-async def get_statistics(start_time: Optional[str] = None, end_time: Optional[str] = None):
-    return {"message": "statistics", "data": {}}
-
-
-@router.get("/stats")
-async def get_alarm_stats():
-    return {
-        "today_count": 0,
-        "banner_count": 0,
-        "absent_count": 0,
-        "loitering_count": 0,
-        "gathering_count": 0
-    }
-
-
-@router.get("/detail")
-async def get_alarm_detail(alarm_id: str, db: Session = Depends(get_db)):
-    """查询单条告警详情"""
-    # 尝试从各模块告警表中查询
-    alarm = None
-    
-    # 查询横幅告警
-    alarm = db.query(AlarmBanner).filter(AlarmBanner.id == alarm_id).first()
-    if alarm:
-        return {
-            "alarm_id": alarm_id,
-            "alarm_time": alarm.alarm_time.isoformat() if alarm.alarm_time else None,
-            "event_id": alarm.event_id,
-            "alarm_type": alarm.alarm_type,
-            "content": alarm.content,
-            "source_type": alarm.source_type,
-            "source_id": alarm.source_id,
-            "status": alarm.status
-        }
-    
-    # 查询离岗告警
-    alarm = db.query(AlarmAbsent).filter(AlarmAbsent.id == alarm_id).first()
-    if alarm:
-        return {
-            "alarm_id": alarm_id,
-            "alarm_time": alarm.alarm_time.isoformat() if alarm.alarm_time else None,
-            "event_id": alarm.event_id,
-            "alarm_type": alarm.alarm_type,
-            "content": alarm.content,
-            "source_type": alarm.source_type,
-            "source_id": alarm.source_id,
-            "status": alarm.status
-        }
-    
-    # 查询徘徊告警
-    alarm = db.query(AlarmLoitering).filter(AlarmLoitering.id == alarm_id).first()
-    if alarm:
-        return {
-            "alarm_id": alarm_id,
-            "alarm_time": alarm.alarm_time.isoformat() if alarm.alarm_time else None,
-            "event_id": alarm.event_id,
-            "alarm_type": alarm.alarm_type,
-            "content": alarm.content,
-            "source_type": alarm.source_type,
-            "source_id": alarm.source_id,
-            "status": alarm.status
-        }
-    
-    # 查询聚集告警
-    alarm = db.query(AlarmGathering).filter(AlarmGathering.id == alarm_id).first()
-    if alarm:
-        return {
-            "alarm_id": alarm_id,
-            "alarm_time": alarm.alarm_time.isoformat() if alarm.alarm_time else None,
-            "event_id": alarm.event_id,
-            "alarm_type": alarm.alarm_type,
-            "content": alarm.content,
-            "source_type": alarm.source_type,
-            "source_id": alarm.source_id,
-            "status": alarm.status
-        }
-    
-    return {"error": "告警不存在", "alarm_id": alarm_id}
-
-
-@router.post("/mark")
-async def mark_alarm_processed(request: AlarmMarkRequest, db: Session = Depends(get_db)):
-    """批量标记告警为已处理"""
-    updated_count = 0
-    
-    for alarm_id in request.alarm_ids:
-        # 更新各模块告警表
-        for model in [AlarmBanner, AlarmAbsent, AlarmLoitering, AlarmGathering]:
-            alarm = db.query(model).filter(model.id == alarm_id).first()
-            if alarm:
-                alarm.status = 1
-                updated_count += 1
-                break
-    
-    db.commit()
-    return {"message": "标记成功", "updated_count": updated_count}
-
-
-@router.get("/export")
-async def export_alarms(
+async def get_statistics(
     start_time: Optional[str] = None,
     end_time: Optional[str] = None,
-    event_id: Optional[str] = None,
-    format: str = "xlsx"
+    db: Session = Depends(get_db)
 ):
-    """导出告警记录"""
-    # TODO: 实现导出功能
-    return {"message": "导出功能待实现", "format": format}
+    banner_count = db.query(AlarmBanner).count()
+    gathering_count = db.query(AlarmGathering).count()
+    loitering_count = db.query(AlarmLoitering).count()
+    absent_count = db.query(AlarmAbsent).count()
 
+    banner_unprocessed = db.query(AlarmBanner).filter(AlarmBanner.status == 0).count()
+    gathering_unprocessed = db.query(AlarmGathering).filter(AlarmGathering.status == 0).count()
+    loitering_unprocessed = db.query(AlarmLoitering).filter(AlarmLoitering.status == 0).count()
+    absent_unprocessed = db.query(AlarmAbsent).filter(AlarmAbsent.status == 0).count()
 
-@router.get("/types")
-async def get_alarm_types():
-    """获取所有告警类型"""
     return {
-        "types": [
-            {"event_id": "01", "name": "横幅识别", "alarm_types": ["违规横幅"]},
-            {"event_id": "02", "name": "离岗识别", "alarm_types": ["离岗首次告警", "离岗持续告警", "离岗告警解除"]},
-            {"event_id": "03", "name": "徘徊警告", "alarm_types": ["徘徊告警", "徘徊告警解除"]},
-            {"event_id": "04", "name": "聚集警告", "alarm_types": ["聚集告警", "聚集告警解除"]}
-        ]
+        "message": "success",
+        "data": {
+            "total": {
+                "banner": banner_count,
+                "gathering": gathering_count,
+                "loitering": loitering_count,
+                "absent": absent_count,
+                "all": banner_count + gathering_count + loitering_count + absent_count
+            },
+            "unprocessed": {
+                "banner": banner_unprocessed,
+                "gathering": gathering_unprocessed,
+                "loitering": loitering_unprocessed,
+                "absent": absent_unprocessed,
+                "all": banner_unprocessed + gathering_unprocessed + loitering_unprocessed + absent_unprocessed
+            }
+        }
     }

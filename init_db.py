@@ -67,7 +67,7 @@ def create_tables():
     print("\n[3/3] Creating/updating table structure...")
     try:
         from models.base import Base
-        from models import video_source, banner, absent, loitering, gathering, system_setting
+        from models import video_source, banner, banner_area, banner_words, absent, loitering, gathering
         from models.base import engine
 
         Base.metadata.create_all(bind=engine)
@@ -83,71 +83,10 @@ def create_tables():
         finally:
             conn.close()
 
-        # 初始化系统设置
-        init_system_settings()
-
         return True
     except Exception as e:
         print(f"  [WARN] Create table: {e}")
         return False
-
-
-def init_system_settings():
-    """初始化系统默认设置"""
-    print("\n[4/4] Initializing system settings...")
-    try:
-        from models.base import SessionLocal
-        from models.system_setting import SystemSetting
-        import json
-
-        db = SessionLocal()
-        try:
-            # 检查是否已有设置
-            existing = db.query(SystemSetting).first()
-            if existing:
-                print("  [OK] System settings already initialized")
-                return
-
-            # 聚集模块设置
-            gathering_settings = [
-                ("trigger_duration_sec", "180", "gathering"),
-                ("clear_duration_sec", "300", "gathering"),
-                ("level_thresholds", json.dumps({"light": 5, "medium": 10, "urgent": 20}), "gathering")
-            ]
-
-            # 徘徊模块设置
-            loitering_settings = [
-                ("default_threshold_min", "10", "loitering"),
-                ("min_duration_filter_sec", "60", "loitering")
-            ]
-
-            # 离岗模块设置
-            absent_settings = [
-                ("default_max_absent_min", "5", "absent"),
-                ("check_interval_sec", "10", "absent")
-            ]
-
-            # 全局模型参数
-            global_settings = [
-                ("model_params", json.dumps({"yolo_confidence": 0.5, "yolo_iou": 0.45, "fps": 10, "resolution": "1080p"}), "global")
-            ]
-
-            all_settings = gathering_settings + loitering_settings + absent_settings + global_settings
-
-            for key, value, module in all_settings:
-                setting = SystemSetting(
-                    setting_key=key,
-                    setting_value=value,
-                    module=module
-                )
-                db.add(setting)
-
-            db.commit()
-            print(f"  [OK] System settings initialized ({len(all_settings)} items)")
-        finally:
-            db.close()
-    except Exception as e:
-        print(f"  [WARN] Init settings: {e}")
 
 
 def init_database(reset=False):

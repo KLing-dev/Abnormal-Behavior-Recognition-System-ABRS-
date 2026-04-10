@@ -4,7 +4,7 @@ from loguru import logger
 import sys
 
 from config.app_config import app_settings
-from api.v1 import source, banner, absent, loitering, gathering, alarm, system, module
+from api.v1 import source, banner, absent, loitering, gathering, alarm
 
 logger.remove()
 logger.add(
@@ -33,8 +33,6 @@ app.include_router(absent.router, prefix="/api/v1")
 app.include_router(loitering.router, prefix="/api/v1")
 app.include_router(gathering.router, prefix="/api/v1")
 app.include_router(alarm.router, prefix="/api/v1")
-app.include_router(system.router, prefix="/api/v1")
-app.include_router(module.router, prefix="/api/v1")
 
 
 @app.get("/")

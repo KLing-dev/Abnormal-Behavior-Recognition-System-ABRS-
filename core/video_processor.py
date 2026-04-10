@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import os
 from typing import Optional, Callable
 from loguru import logger
 
@@ -12,12 +13,42 @@ class VideoProcessor:
         self.cap: Optional[cv2.VideoCapture] = None
         self.is_running = False
 
+    def _resolve_video_path(self, path: str) -> str:
+        """解析视频文件路径，尝试多种可能的位置"""
+        if not path:
+            return path
+
+        # 如果已经是绝对路径且存在，直接返回
+        if os.path.isabs(path) and os.path.exists(path):
+            return path
+
+        # 尝试相对路径
+        if os.path.exists(path):
+            return path
+
+        # 尝试 TEST/videodata 目录
+        test_paths = [
+            f"TEST/videodata/{path}",
+            f"TEST/videodata/{os.path.basename(path)}",
+            f"../TEST/videodata/{path}",
+            f"../TEST/videodata/{os.path.basename(path)}",
+        ]
+
+        for test_path in test_paths:
+            if os.path.exists(test_path):
+                logger.info(f"Resolved video path: {path} -> {test_path}")
+                return test_path
+
+        # 如果都找不到，返回原始路径
+        return path
+
     def start(self) -> bool:
         try:
             if self.source_type == "camera":
                 self.cap = cv2.VideoCapture(self.device_id)
             elif self.source_type == "file":
-                self.cap = cv2.VideoCapture(self.source_addr)
+                resolved_path = self._resolve_video_path(self.source_addr)
+                self.cap = cv2.VideoCapture(resolved_path)
             elif self.source_type == "stream":
                 self.cap = cv2.VideoCapture(self.source_addr)
 
@@ -48,7 +79,9 @@ class VideoProcessor:
                 logger.warning("Camera disconnected")
                 return None
             elif self.source_type == "file":
-                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                # 本地视频文件播放完毕，自动停止
+                logger.info("Video file finished playing")
+                self.is_running = False
                 return None
             return None
 

@@ -131,16 +131,16 @@ async def get_alarms(
     db: Session = Depends(get_db)
 ):
     query = db.query(AlarmGathering)
-
+    
     if area_id:
         query = query.filter(AlarmGathering.content.contains(f'"area_id": "{area_id}"'))
     if start_time:
         query = query.filter(AlarmGathering.alarm_time >= start_time)
     if end_time:
         query = query.filter(AlarmGathering.alarm_time <= end_time)
-
+    
     alarms = query.order_by(AlarmGathering.alarm_time.desc()).all()
-
+    
     result = []
     for a in alarms:
         result.append({
@@ -153,106 +153,3 @@ async def get_alarms(
             "status": a.status
         })
     return {"alarms": result}
-
-
-# 新增接口：获取检测状态
-@router.get("/status")
-async def get_status():
-    """获取聚集检测实时状态"""
-    return {
-        "is_running": False,
-        "source_id": None,
-        "source_type": None,
-        "areas_count": 0,
-        "current_alarms": []
-    }
-
-
-# 新增接口：设置查询和更新
-@router.get("/setting/query")
-async def get_settings(db: Session = Depends(get_db)):
-    """查询聚集检测全局设置"""
-    from models.system_setting import SystemSetting
-    import json
-
-    settings = db.query(SystemSetting).filter(SystemSetting.module == "gathering").all()
-    result = {
-        "trigger_duration_sec": 180,
-        "clear_duration_sec": 300,
-        "level_thresholds": {"light": 5, "medium": 10, "urgent": 20}
-    }
-
-    for s in settings:
-        if s.setting_key == "trigger_duration_sec":
-            result["trigger_duration_sec"] = int(s.setting_value)
-        elif s.setting_key == "clear_duration_sec":
-            result["clear_duration_sec"] = int(s.setting_value)
-        elif s.setting_key == "level_thresholds":
-            result["level_thresholds"] = json.loads(s.setting_value)
-
-    return result
-
-
-class GatheringSettingsUpdate(BaseModel):
-    trigger_duration_sec: Optional[int] = 180
-    clear_duration_sec: Optional[int] = 300
-    level_thresholds: Optional[Dict] = None
-
-
-@router.post("/setting/update")
-async def update_settings(settings: GatheringSettingsUpdate, db: Session = Depends(get_db)):
-    """更新聚集检测全局设置"""
-    from models.system_setting import SystemSetting
-    import json
-
-    # 更新触发时长
-    trigger_setting = db.query(SystemSetting).filter(
-        SystemSetting.setting_key == "trigger_duration_sec",
-        SystemSetting.module == "gathering"
-    ).first()
-
-    if trigger_setting:
-        trigger_setting.setting_value = str(settings.trigger_duration_sec)
-    else:
-        trigger_setting = SystemSetting(
-            setting_key="trigger_duration_sec",
-            setting_value=str(settings.trigger_duration_sec),
-            module="gathering"
-        )
-        db.add(trigger_setting)
-
-    # 更新清除时长
-    clear_setting = db.query(SystemSetting).filter(
-        SystemSetting.setting_key == "clear_duration_sec",
-        SystemSetting.module == "gathering"
-    ).first()
-
-    if clear_setting:
-        clear_setting.setting_value = str(settings.clear_duration_sec)
-    else:
-        clear_setting = SystemSetting(
-            setting_key="clear_duration_sec",
-            setting_value=str(settings.clear_duration_sec),
-            module="gathering"
-        )
-        db.add(clear_setting)
-
-    # 更新等级阈值
-    if settings.level_thresholds:
-        level_setting = db.query(SystemSetting).filter(
-            SystemSetting.setting_key == "level_thresholds",
-            SystemSetting.module == "gathering"
-        ).first()
-
-        if level_setting:
-            level_setting.setting_value = json.dumps(settings.level_thresholds)
-        else:
-            level_setting = SystemSetting(
-                setting_key="level_thresholds",
-                setting_value=json.dumps(settings.level_thresholds),
-                module="gathering"
-            )
-            db.add(level_setting)
-
-    db.commit()
-    return {"message": "设置更新成功"}

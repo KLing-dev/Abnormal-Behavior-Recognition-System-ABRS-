@@ -227,16 +227,16 @@ async def get_alarms(
 ):
     """查询告警记录"""
     query = db.query(AlarmAbsent)
-
+    
     if person_id:
         query = query.filter(AlarmAbsent.content.contains(f'"person_id": "{person_id}"'))
     if start_time:
         query = query.filter(AlarmAbsent.alarm_time >= start_time)
     if end_time:
         query = query.filter(AlarmAbsent.alarm_time <= end_time)
-
+    
     alarms = query.order_by(AlarmAbsent.alarm_time.desc()).all()
-
+    
     result = []
     for a in alarms:
         result.append({
@@ -249,70 +249,3 @@ async def get_alarms(
             "status": a.status
         })
     return {"alarms": result}
-
-
-# 新增接口：设置查询和更新
-@router.get("/setting/query")
-async def get_settings(db: Session = Depends(get_db)):
-    """查询离岗检测全局设置"""
-    from models.system_setting import SystemSetting
-
-    settings = db.query(SystemSetting).filter(SystemSetting.module == "absent").all()
-    result = {
-        "default_max_absent_min": 5,
-        "check_interval_sec": 10
-    }
-
-    for s in settings:
-        if s.setting_key == "default_max_absent_min":
-            result["default_max_absent_min"] = int(s.setting_value)
-        elif s.setting_key == "check_interval_sec":
-            result["check_interval_sec"] = int(s.setting_value)
-
-    return result
-
-
-class AbsentSettingsUpdate(BaseModel):
-    default_max_absent_min: Optional[int] = 5
-    check_interval_sec: Optional[int] = 10
-
-
-@router.post("/setting/update")
-async def update_settings(settings: AbsentSettingsUpdate, db: Session = Depends(get_db)):
-    """更新离岗检测全局设置"""
-    from models.system_setting import SystemSetting
-
-    # 更新默认最大离岗时长
-    max_absent_setting = db.query(SystemSetting).filter(
-        SystemSetting.setting_key == "default_max_absent_min",
-        SystemSetting.module == "absent"
-    ).first()
-
-    if max_absent_setting:
-        max_absent_setting.setting_value = str(settings.default_max_absent_min)
-    else:
-        max_absent_setting = SystemSetting(
-            setting_key="default_max_absent_min",
-            setting_value=str(settings.default_max_absent_min),
-            module="absent"
-        )
-        db.add(max_absent_setting)
-
-    # 更新检查间隔
-    interval_setting = db.query(SystemSetting).filter(
-        SystemSetting.setting_key == "check_interval_sec",
-        SystemSetting.module == "absent"
-    ).first()
-
-    if interval_setting:
-        interval_setting.setting_value = str(settings.check_interval_sec)
-    else:
-        interval_setting = SystemSetting(
-            setting_key="check_interval_sec",
-            setting_value=str(settings.check_interval_sec),
-            module="absent"
-        )
-        db.add(interval_setting)
-
-    db.commit()
-    return {"message": "设置更新成功"}

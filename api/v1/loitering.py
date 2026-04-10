@@ -112,16 +112,16 @@ async def get_alarms(
     db: Session = Depends(get_db)
 ):
     query = db.query(AlarmLoitering)
-
+    
     if area_id:
         query = query.filter(AlarmLoitering.content.contains(f'"area_id": "{area_id}"'))
     if start_time:
         query = query.filter(AlarmLoitering.alarm_time >= start_time)
     if end_time:
         query = query.filter(AlarmLoitering.alarm_time <= end_time)
-
+    
     alarms = query.order_by(AlarmLoitering.alarm_time.desc()).all()
-
+    
     result = []
     for a in alarms:
         result.append({
@@ -134,83 +134,3 @@ async def get_alarms(
             "status": a.status
         })
     return {"alarms": result}
-
-
-# 新增接口：获取检测状态
-@router.get("/status")
-async def get_status():
-    """获取徘徊检测实时状态"""
-    return {
-        "is_running": False,
-        "source_id": None,
-        "source_type": None,
-        "areas_count": 0,
-        "current_alarms": []
-    }
-
-
-# 新增接口：设置查询和更新
-@router.get("/setting/query")
-async def get_settings(db: Session = Depends(get_db)):
-    """查询徘徊检测全局设置"""
-    from models.system_setting import SystemSetting
-
-    settings = db.query(SystemSetting).filter(SystemSetting.module == "loitering").all()
-    result = {
-        "default_threshold_min": 10,
-        "min_duration_filter_sec": 60
-    }
-
-    for s in settings:
-        if s.setting_key == "default_threshold_min":
-            result["default_threshold_min"] = int(s.setting_value)
-        elif s.setting_key == "min_duration_filter_sec":
-            result["min_duration_filter_sec"] = int(s.setting_value)
-
-    return result
-
-
-class LoiteringSettingsUpdate(BaseModel):
-    default_threshold_min: Optional[int] = 10
-    min_duration_filter_sec: Optional[int] = 60
-
-
-@router.post("/setting/update")
-async def update_settings(settings: LoiteringSettingsUpdate, db: Session = Depends(get_db)):
-    """更新徘徊检测全局设置"""
-    from models.system_setting import SystemSetting
-
-    # 更新默认阈值
-    threshold_setting = db.query(SystemSetting).filter(
-        SystemSetting.setting_key == "default_threshold_min",
-        SystemSetting.module == "loitering"
-    ).first()
-
-    if threshold_setting:
-        threshold_setting.setting_value = str(settings.default_threshold_min)
-    else:
-        threshold_setting = SystemSetting(
-            setting_key="default_threshold_min",
-            setting_value=str(settings.default_threshold_min),
-            module="loitering"
-        )
-        db.add(threshold_setting)
-
-    # 更新最小过滤时长
-    filter_setting = db.query(SystemSetting).filter(
-        SystemSetting.setting_key == "min_duration_filter_sec",
-        SystemSetting.module == "loitering"
-    ).first()
-
-    if filter_setting:
-        filter_setting.setting_value = str(settings.min_duration_filter_sec)
-    else:
-        filter_setting = SystemSetting(
-            setting_key="min_duration_filter_sec",
-            setting_value=str(settings.min_duration_filter_sec),
-            module="loitering"
-        )
-        db.add(filter_setting)
-
-    db.commit()
-    return {"message": "设置更新成功"}
