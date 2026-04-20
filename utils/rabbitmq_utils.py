@@ -2,6 +2,7 @@ import pika
 import json
 from typing import Optional, Callable
 from config.rabbitmq_config import rabbitmq_settings
+from loguru import logger
 
 
 class RabbitMQClient:
@@ -28,17 +29,42 @@ class RabbitMQClient:
             self.connect()
         self.channel.queue_declare(queue=queue_name, durable=durable)
 
-    def publish(self, queue_name: str, message: dict):
-        if not self.channel:
+    def _ensure_connection(self):
+        """确保连接和通道处于可用状态，必要时自动重连"""
+        try:
+            if self.connection is None or self.connection.is_closed:
+                self.connect()
+            elif self.channel is None or self.channel.is_closed:
+                self.channel = self.connection.channel()
+        except Exception:
             self.connect()
-        self.channel.basic_publish(
-            exchange='',
-            routing_key=queue_name,
-            body=json.dumps(message, ensure_ascii=False),
-            properties=pika.BasicProperties(
-                delivery_mode=2
+
+    def publish(self, queue_name: str, message: dict):
+        try:
+            self._ensure_connection()
+            self.channel.basic_publish(
+                exchange='',
+                routing_key=queue_name,
+                body=json.dumps(message, ensure_ascii=False),
+                properties=pika.BasicProperties(
+                    delivery_mode=2
+                )
             )
-        )
+        except Exception as e:
+            logger.error(f"Failed to publish message: {e}")
+            try:
+                self.connect()
+                self.channel.basic_publish(
+                    exchange='',
+                    routing_key=queue_name,
+                    body=json.dumps(message, ensure_ascii=False),
+                    properties=pika.BasicProperties(
+                        delivery_mode=2
+                    )
+                )
+            except Exception as retry_error:
+                logger.error(f"Retry failed to publish message: {retry_error}")
+                raise
 
     def consume(self, queue_name: str, callback: Callable):
         if not self.channel:

@@ -246,7 +246,14 @@ class AlarmStatusUpdate(BaseModel):
 
 
 @router.get("/alarm/list")
-async def list_alarms(area_id: Optional[str] = None, start_time: Optional[str] = None, end_time: Optional[str] = None, db: Session = Depends(get_db)):
+async def list_alarms(
+    area_id: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    status: Optional[int] = None,
+    limit: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
     query = db.query(AlarmBanner)
 
     if area_id:
@@ -255,8 +262,15 @@ async def list_alarms(area_id: Optional[str] = None, start_time: Optional[str] =
         query = query.filter(AlarmBanner.alarm_time >= start_time)
     if end_time:
         query = query.filter(AlarmBanner.alarm_time <= end_time)
+    if status is not None:
+        query = query.filter(AlarmBanner.status == status)
 
-    alarms = query.order_by(AlarmBanner.alarm_time.desc()).all()
+    query = query.order_by(AlarmBanner.alarm_time.desc())
+
+    if limit:
+        query = query.limit(limit)
+
+    alarms = query.all()
 
     return {
         "alarms": [

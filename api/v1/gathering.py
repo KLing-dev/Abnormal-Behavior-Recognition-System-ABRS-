@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict
 from sqlalchemy.orm import Session
 from models.base import get_db
 from models.gathering import AreaGathering, AlarmGathering
+from core.gathering.detector import gathering_detector
+from core.gathering.video_processor import gathering_processor
 
 
 router = APIRouter(prefix="/gathering", tags=["gathering"])
@@ -128,6 +130,8 @@ async def get_alarms(
     level: Optional[str] = None,
     start_time: Optional[str] = None,
     end_time: Optional[str] = None,
+    status: Optional[int] = None,
+    limit: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
     query = db.query(AlarmGathering)
@@ -138,12 +142,20 @@ async def get_alarms(
         query = query.filter(AlarmGathering.alarm_time >= start_time)
     if end_time:
         query = query.filter(AlarmGathering.alarm_time <= end_time)
+    if status is not None:
+        query = query.filter(AlarmGathering.status == status)
     
-    alarms = query.order_by(AlarmGathering.alarm_time.desc()).all()
+    query = query.order_by(AlarmGathering.alarm_time.desc())
+    
+    if limit:
+        query = query.limit(limit)
+    
+    alarms = query.all()
     
     result = []
     for a in alarms:
         result.append({
+            "id": a.id,
             "alarm_time": a.alarm_time.isoformat() if a.alarm_time else None,
             "event_id": a.event_id,
             "alarm_type": a.alarm_type,
@@ -153,3 +165,130 @@ async def get_alarms(
             "status": a.status
         })
     return {"alarms": result}
+
+
+@router.get("/alarm/stats")
+async def get_alarm_stats(db: Session = Depends(get_db)):
+    """获取告警统计（未处理/已处理数量）"""
+    unprocessed_count = db.query(AlarmGathering).filter(AlarmGathering.status == 0).count()
+    processed_count = db.query(AlarmGathering).filter(AlarmGathering.status == 1).count()
+    
+    return {
+        "unprocessed": unprocessed_count,
+        "processed": processed_count,
+        "total": unprocessed_count + processed_count
+    }
+
+
+class AlarmStatusUpdate(BaseModel):
+    status: int
+
+
+@router.post("/alarm/update/{alarm_id}")
+async def update_alarm_status(alarm_id: int, update: AlarmStatusUpdate, db: Session = Depends(get_db)):
+    """更新告警状态"""
+    alarm = db.query(AlarmGathering).filter(AlarmGathering.id == alarm_id).first()
+    if not alarm:
+        raise HTTPException(status_code=404, detail="告警不存在")
+    
+    alarm.status = update.status
+    db.commit()
+    
+    return {"message": "告警状态更新成功", "alarm_id": alarm_id, "status": update.status}
+
+
+class BatchUpdateRequest(BaseModel):
+    alarm_ids: list
+    status: int
+
+
+@router.post("/alarm/batch-update")
+async def batch_update_alarm_status(request: BatchUpdateRequest, db: Session = Depends(get_db)):
+    """批量更新告警状态"""
+    updated_count = 0
+    for alarm_id in request.alarm_ids:
+        alarm = db.query(AlarmGathering).filter(AlarmGathering.id == alarm_id).first()
+        if alarm:
+            alarm.status = request.status
+            updated_count += 1
+    
+    db.commit()
+    
+    return {"message": f"成功更新 {updated_count} 条告警状态", "updated_count": updated_count}
+
+
+class BatchDeleteRequest(BaseModel):
+    alarm_ids: list
+
+
+@router.post("/alarm/batch-delete")
+async def batch_delete_alarms(request: BatchDeleteRequest, db: Session = Depends(get_db)):
+    """批量删除告警"""
+    deleted_count = 0
+    for alarm_id in request.alarm_ids:
+        alarm = db.query(AlarmGathering).filter(AlarmGathering.id == alarm_id).first()
+        if alarm:
+            db.delete(alarm)
+            deleted_count += 1
+    
+    db.commit()
+    
+    return {"message": f"成功删除 {deleted_count} 条告警", "deleted_count": deleted_count}
+
+
+@router.delete("/alarm/{alarm_id}")
+async def delete_alarm(alarm_id: int, db: Session = Depends(get_db)):
+    """删除单条告警"""
+    alarm = db.query(AlarmGathering).filter(AlarmGathering.id == alarm_id).first()
+    if not alarm:
+        raise HTTPException(status_code=404, detail="告警不存在")
+    
+    db.delete(alarm)
+    db.commit()
+    
+    return {"message": "告警删除成功", "alarm_id": alarm_id}
+
+
+@router.get("/status")
+async def get_status():
+    """获取检测状态"""
+    return {
+        "is_running": gathering_processor.is_running,
+        "source_type": gathering_processor.current_source_type,
+        "source_id": gathering_processor.current_source_id,
+        "alert_count": len(gathering_processor.alarm_history) if hasattr(gathering_processor, 'alarm_history') else 0,
+        "areas_count": len(gathering_detector.areas) if hasattr(gathering_detector, 'areas') else 0
+    }
+
+
+@router.post("/source/switch")
+async def switch_source(source_type: str, source_id: str, device_id: Optional[int] = None):
+    """切换输入源"""
+    success = gathering_processor.switch_source(source_type, source_id, device_id)
+    if success:
+        return {"message": "输入源切换成功", "source_type": source_type, "source_id": source_id}
+    else:
+        return {"error": "输入源切换失败，请检查视频源是否可用"}
+
+
+@router.post("/start")
+async def start_detection(info: StartDetectionInfo):
+    """启动聚集检测"""
+    if gathering_processor.is_running:
+        return {"error": "检测已在运行中，请先停止"}
+    
+    success = gathering_processor.start_detection(info.source_id)
+    if success:
+        return {"message": "聚集检测已启动", "source_id": info.source_id}
+    else:
+        return {"error": "启动失败，请检查视频源配置"}
+
+
+@router.post("/stop")
+async def stop_detection():
+    """停止聚集检测"""
+    if not gathering_processor.is_running:
+        return {"message": "检测未在运行"}
+    
+    gathering_processor.stop_detection()
+    return {"message": "聚集检测已停止"}

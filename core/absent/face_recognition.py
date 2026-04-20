@@ -89,7 +89,7 @@ class FaceRecognizer:
         return lbp
     
     def detect_faces(self, frame: np.ndarray) -> List[Tuple[int, int, int, int]]:
-        """检测图像中的所有人脸"""
+        """检测图像中的所有人脸，使用严格的过滤条件减少误检"""
         faces = []
         
         if self.face_detector is None:
@@ -103,12 +103,33 @@ class FaceRecognizer:
             self.face_detector.setInput(blob)
             detections = self.face_detector.forward()
             
+            # 计算图片对角线长度作为参考
+            img_diagonal = np.sqrt(h**2 + w**2)
+            min_face_size = int(img_diagonal * 0.15)  # 提高最小人脸为图片对角线的15%
+            max_face_size = int(img_diagonal * 0.8)   # 最大人脸为图片对角线的80%
+            
             for i in range(detections.shape[2]):
                 confidence = detections[0, 0, i, 2]
-                if confidence > 0.5:
+                # 大幅提高置信度阈值到0.85，严格减少误检
+                if confidence > 0.85:
                     box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
                     (startX, startY, endX, endY) = box.astype("int")
-                    faces.append((startX, startY, endX - startX, endY - startY))
+                    
+                    face_w = endX - startX
+                    face_h = endY - startY
+                    
+                    # 过滤掉太小或太大的人脸（可能是误检）
+                    if face_w < min_face_size or face_h < min_face_size:
+                        continue
+                    if face_w > max_face_size or face_h > max_face_size:
+                        continue
+                    
+                    # 过滤掉宽高比异常的人脸（正常人脸比例在0.6-1.4之间）
+                    aspect_ratio = face_w / face_h if face_h > 0 else 0
+                    if aspect_ratio < 0.6 or aspect_ratio > 1.4:
+                        continue
+                    
+                    faces.append((startX, startY, face_w, face_h))
                     
         except Exception as e:
             print(f"DNN人脸检测失败，使用Haar降级: {e}")
